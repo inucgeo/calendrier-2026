@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terminal de Secours - IGN</title>
+<style>
+  /* Police Marianne servie par le CDN du DSFR (repli sur sans-serif) */
+  @font-face { font-family: "Marianne"; font-weight: 400; font-display: swap;
+    src: url("https://cdn.jsdelivr.net/npm/@gouvfr/dsfr@1.12.1/dist/fonts/Marianne-Regular.woff2") format("woff2"); }
+  @font-face { font-family: "Marianne"; font-weight: 700; font-display: swap;
+    src: url("https://cdn.jsdelivr.net/npm/@gouvfr/dsfr@1.12.1/dist/fonts/Marianne-Bold.woff2") format("woff2"); }
+
+  :root { --vert: #00ff00; --rouge: #ff3333; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #222; color: #fff; font-family: "Marianne", Arial, sans-serif; line-height: 1.5; }
+  main { max-width: 1000px; margin: 0 auto; padding: 20px; }
+  h1 { font-size: 2rem; margin: 10px 0 25px; }
+
+  .alerte { border-left: 4px solid #444; background: #2b2b2b; padding: 12px 20px; }
+  .alerte strong { display: block; margin-bottom: 8px; }
+  .alerte p { font-style: italic; margin: 8px 0; }
+
+  hr.vert { border: 0; border-top: 1px solid var(--vert); margin: 30px 0; }
+  hr.rouge { border: 0; border-top: 1px solid red; margin: 40px 0; }
+
+  .grille { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; }
+  .terminal { background: #0d0d0d; border: 1px solid var(--vert); padding: 15px; border-radius: 4px;
+              color: var(--vert); font-family: monospace; }
+  .terminal h4 { margin: 0 0 10px; }
+  .terminal .enigme { min-height: 80px; font-size: 0.9em; }
+  .terminal input { background: black; color: var(--vert); border: 1px solid var(--vert); padding: 5px;
+                    width: 100%; margin-bottom: 10px; font-family: monospace; }
+  .terminal button { background: var(--vert); color: black; border: none; padding: 5px 15px;
+                     cursor: pointer; font-weight: bold; font-family: monospace; }
+  .info { color: var(--vert); font-family: monospace; margin: 0 0 15px; }
+  .msg { margin-top: 15px; min-height: 20px; font-weight: bold; }
+  .fragment { color: white; font-size: 1.2em; text-transform: uppercase; }
+
+  .boss { background: #1a0000; border: 2px solid red; padding: 20px; border-radius: 4px;
+          color: var(--rouge); font-family: monospace; text-align: center; }
+  .boss h2 { color: red; }
+  .boss textarea { width: 100%; max-width: 600px; background: black; color: red; border: 1px solid red;
+                   padding: 10px; margin-bottom: 15px; font-family: monospace; }
+  .boss button { background: red; color: white; border: none; padding: 10px 20px; font-size: 1.1em;
+                 cursor: pointer; font-weight: bold; font-family: monospace; }
+  .rappel { margin: 20px auto 0; max-width: 600px; border: 2px dashed var(--vert); padding: 15px;
+            color: var(--vert); font-size: 1.05em; }
+  .rappel a { color: white; font-weight: bold; }
+  #msg_boss { margin-top: 20px; font-size: 1.2em; font-weight: bold; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Terminal de Secours - IGN</h1>
+
+  <div class="alerte">
+    <strong>ALERTE SYSTÈME : INTRUSION CRITIQUE</strong>
+    <p>« Bonjour. Je suis Null, un hacker fatigué par vos cartes qui réduisent la complexité du monde à de simples polygones. Pour vous donner une leçon, j'ai téléchargé vos consciences dans une simulation topographique. Vous êtes actuellement piégés quelque part entre la couche des routes et celle du cadastre.</p>
+    <p>Vous avez jusqu'à Noël avant que je ne formate la base de données. Chaque jour de décembre, un terminal de commande s'ouvrira. Résolvez mon énigme spatio-environnementale, et le terminal vous recrachera un fragment de code.</p>
+    <p>Reconstituez la phrase finale de 24 mots, et vous pourrez vous échapper du logiciel pour retrouver la réalité de votre bureau. Bonne chance. »</p>
+  </div>
+
+  <hr class="vert">
+
+  <p id="info" class="info"></p>
+  <div class="grille" id="grille"></div>
+
+  <section id="zone_boss" hidden>
+  <hr class="rouge">
+
+  <div class="boss">
+    <h2>⚠️ CONSOLE D'ÉCHAPPEMENT DÉFINITIVE</h2>
+    <p>Reconstituez la phrase complète (les 24 mots dans l'ordre) avec les fragments récupérés pour quitter la simulation.</p>
+    <textarea id="boss_input" rows="3" placeholder="Saisir la phrase de passe..."></textarea>
+    <br>
+    <button type="button" onclick="checkBoss()">TENTER L'ÉVASION</button>
+    <p id="msg_boss"></p>
+    <div id="rappel_mail" class="rappel" hidden></div>
+  </div>
+  </section>
+</main>
+
+<script>
+// ----- Paramètre : année du calendrier (verrou temporel) -----
+const ANNEE = 2026;
+const ITER = 300000; // itérations PBKDF2 (ralentit les essais en force brute)
+
+// Pour chaque jour : énigme (e), sel (s), vecteur d'initialisation (iv), fragment chiffré (c)
+const DATA = [
+ {
+  "e": "Je déforme le Groenland jusqu'à l'absurde, mais les marins m'adorent pour garder leur cap constant.",
+  "s": "r03MtLUGKj2nGVPz74iEjA==",
+  "iv": "qlsyBrLVIaZEK7Fh",
+  "c": "i2lq0yMfXvgurXYlNifGy+fPTVc="
+ },
+ {
+  "e": "Point d'exil des données mal géoréférencées, je flotte au large du Golfe de Guinée à 0,0.",
+  "s": "HzcuIKiDoqO9YMxmq5cqiw==",
+  "iv": "wH7QqP6x4pAJN+ma",
+  "c": "N+FwF7pzKoWCySK8W8WOcS6QDctlWvPptA=="
+ },
+ {
+  "e": "Acronyme de l'objectif environnemental de la loi Climat et Résilience qui terrifie actuellement tous les maires bâtisseurs.",
+  "s": "peidXnypxpo81ur03VXQ1A==",
+  "iv": "xVm251dDHMZ/p35F",
+  "c": "DwT0PLs1ammEDY527tvMvd08JI2i"
+ },
+ {
+  "e": "Dans l'écosystème de l'IGN, je suis la base de données vectorielle 3D qui décrit méticuleusement le paysage.",
+  "s": "ncri/QkWsQGvE7Kh9haZCg==",
+  "iv": "YgIVyyHaYZVFmjV8",
+  "c": "REqzw70oGbAzdVvJg+A2fqH6oQ=="
+ },
+ {
+  "e": "Je suis le code EPSG (4 chiffres) qui permet à toute la France métropolitaine de s'aligner sur une même carte.",
+  "s": "6+HWeltAnfCuYUBsqNoNJQ==",
+  "iv": "84pkb6pezUv9/F2j",
+  "c": "91SCT/fCidshEc6Rp0+bB0Bg"
+ },
+ {
+  "e": "Problème statistique (acronyme) prouvant que changer le découpage spatial change radicalement les résultats de l'analyse.",
+  "s": "lN1yVkt4CRjFLBriNY9LJg==",
+  "iv": "eNTZYM6X6TVE4mN4",
+  "c": "DZq2Pa5O8aYiWZzt8Kp6Vleu8cD6Hjs+NQ=="
+ },
+ {
+  "e": "Processus socio-spatial insidieux où l'arrivée de classes aisées chasse les populations historiques.",
+  "s": "JCE5WWfdVdyE6IGRjuw++Q==",
+  "iv": "jp3qoE8zVyREFzEm",
+  "c": "bcFIZ0mR9ph1GqqUhb1WmVQc"
+ },
+ {
+  "e": "Plus nous sommes proches sur le papier, plus la pente que nous décrivons sur le terrain vous fera transpirer.",
+  "s": "wpN4FtPH5LnlH5j+sgsiUw==",
+  "iv": "0gad4FuyvrTTMzii",
+  "c": "vY+LTL3VGcj5tQhPHK9wTeLSfKRoA8/TOdE="
+ },
+ {
+  "e": "Indice satellitaire star (acronyme) pour démasquer la chlorophylle et calculer la vigueur de la végétation.",
+  "s": "xgfrpibciNWZIG7MFUk1vQ==",
+  "iv": "X7VPMDhNHzj2ix3A",
+  "c": "PCUhxOU7fnYlaU7AQgs/ZF7i"
+ },
+ {
+  "e": "Célèbre famille de cartographes français ayant mesuré le royaume par triangulation.",
+  "s": "Cvf4OcOh7Cm0beqJkohPZw==",
+  "iv": "eykg+p9v5LkndMIE",
+  "c": "XFeHgXzGN0qGeEeUFrbXAeIF3WL9BA=="
+ },
+ {
+  "e": "Algorithme de théorie des graphes trouvant toujours le plus court chemin dans un réseau.",
+  "s": "5DpSEwSVEkiBOff3D1lnQA==",
+  "iv": "T0DONet8oB8AIK4+",
+  "c": "S5xaHiaKMRawY/6/i2E6IffRQFMe"
+ },
+ {
+  "e": "SGBD relationnel à la mascotte d'éléphant, incontournable avec sa cartouche spatiale.",
+  "s": "WFFENVZoXaQ/gpKBrUzuSQ==",
+  "iv": "SZd5n86Eo3sKzQ36",
+  "c": "K9jPYkjHfe20375DEuKUS6vmmuM="
+ },
+ {
+  "e": "Phénomène microclimatique nocturne (acronyme 3 lettres) combattu par la désimperméabilisation.",
+  "s": "8PH42iI4WOQ52wpS4r+haw==",
+  "iv": "jT8ZKQ9O5qUWc9MR",
+  "c": "UqP9pWk1NtGTtzuscYiqRAzpBA=="
+ },
+ {
+  "e": "Zone d'influence mathématique générée autour d'une entité (Buffer en anglais).",
+  "s": "zxQQEC35bdXD+syBr+IWXA==",
+  "iv": "diC0q2Ot7M5wDKN4",
+  "c": "JDrM6/SwtPrLOeiBntYylqvS13nu"
+ },
+ {
+  "e": "Format historique inventé par Esri nécessitant au minimum 3 fichiers pour fonctionner.",
+  "s": "iHn659IWB2kvk1a0KplwAg==",
+  "iv": "VEHwk/uOgngdMDgK",
+  "c": "uGuwmvfhZeWaVB2YuYKE+zDvs643qQ=="
+ },
+ {
+  "e": "Type de carte thématique où les polygones sont colorés selon une variable statistique.",
+  "s": "PWwQOjPFL2NT4YhFVmP1Dw==",
+  "iv": "0W85gzG4jL+Nsyen",
+  "c": "pyEqVkhvGHIAxd8csRp17USfNjQ="
+ },
+ {
+  "e": "Standard OGC (3 lettres) pour afficher des cartes sous forme d'images sans télécharger la donnée vectorielle.",
+  "s": "wjgQ9LoOqKUYtI0EOrk7LA==",
+  "iv": "PG8qQ73voSmX/7/N",
+  "c": "vA3wl+pKPWjXK5BzTSiQEiVfLINqHQ=="
+ },
+ {
+  "e": "Réseau écologique (3 lettres) visant à préserver les continuités terrestres et aquatiques.",
+  "s": "2IMDtKqUUnoCQTOfPp5eGQ==",
+  "iv": "ZEI44GzSHP7M1Kyd",
+  "c": "ARPLGyWcAhpiAky41J+2a3yCiUym8w=="
+ },
+ {
+  "e": "Format web léger, écrit en JavaScript et bourré d'accolades.",
+  "s": "u9GB3Rp9COqe8joHkZVU9A==",
+  "iv": "c8HhmLeaiomlG8QH",
+  "c": "46e93w1I8bQ2KiH+TGv32Gbt"
+ },
+ {
+  "e": "Règles mathématiques garantissant l'absence de trous ou superpositions entre les parcelles de mon cadastre.",
+  "s": "+mK2nWJ9XAS3MDyLQLIPOw==",
+  "iv": "XkUmIrgCgRez4n6l",
+  "c": "R09WvUZ8gecpHCjXgMWD3LiD"
+ },
+ {
+  "e": "Constellation européenne de positionnement, plus précise que son grand frère américain.",
+  "s": "a/Wi2lSqPqwd22K1vP1fbQ==",
+  "iv": "Jdpw3XtcQMecZLof",
+  "c": "WMpYwQEb4ddZND8Xzd2Ewie+"
+ },
+ {
+  "e": "Carte où la géométrie est volontairement déformée en fonction de la valeur de la variable représentée.",
+  "s": "StTJ0GFGYCn3noac7KuIdA==",
+  "iv": "aw3Jgo+7vKdFNyUd",
+  "c": "9cf5yD6gtQGdS8CdvogQ3FLB"
+ },
+ {
+  "e": "Établissement public français garant de la connaissance du sol et sous-sol (acronyme).",
+  "s": "7CGUht4hwBNWJsOv7O3P7Q==",
+  "iv": "IcEH358tzN5WoWoy",
+  "c": "YA9KBLr9R+mf3YC6BCdYfx40"
+ },
+ {
+  "e": "Acronyme du grand institut géographique public français, votre véritable maison.",
+  "s": "9lFOY6v7xaoFTmn1QbczCg==",
+  "iv": "9ZPRCSiiuOSY+Mge",
+  "c": "8lgvrvcIDwdLRlSIk05bPgPcnCZre5BVEA=="
+ }
+];
+const BOSS = {"s": "647+9cjoQ3gOvUWVlA8LTw==", "iv": "2lPE0DhZELiCXjEK", "c": "I8qBWtVtg1DUIt87VHyhvFPXKDL/+nto/VyNV4bammisGjdfbVEjz6Ve9QtunP/dzcVvipSB8RzrKa2bftkraHMdW+hNXhRQN+na1MRXSEVpXZyaI18LhGR8Pi96"};
+const MAIL = "inuc.geo@gmail.com";
+
+const b64 = s => Uint8Array.from(atob(s), ch => ch.charCodeAt(0));
+
+// Nettoyage : minuscules, sans accents, sans espaces ni ponctuation
+function cleanString(str) {
+  return str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+}
+
+// Dérive une clé AES à partir de la saisie, puis tente de déchiffrer.
+// AES-GCM est authentifié : une mauvaise saisie fait échouer le déchiffrement.
+async function dechiffrer(saisie, d) {
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(saisie), "PBKDF2", false, ["deriveKey"]);
+  const cle = await crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt: b64(d.s), iterations: ITER, hash: "SHA-256" },
+    base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+  try {
+    const clair = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(d.iv) }, cle, b64(d.c));
+    return new TextDecoder().decode(clair);
+  } catch (e) { return null; }
+}
+
+// Mode aperçu pour l'enseignant : ajouter ?apercu à l'adresse affiche tous les terminaux
+const APERCU = new URLSearchParams(location.search).has("apercu");
+const estOuvert = jour => APERCU || new Date() >= new Date(ANNEE, 11, jour, 0, 0, 0); // mois 11 = décembre
+
+// Génération des terminaux déjà ouverts uniquement
+const grille = document.getElementById("grille");
+let nbOuverts = 0;
+DATA.forEach(function (d, i) {
+  const jour = i + 1;
+  if (!estOuvert(jour)) return;
+  nbOuverts++;
+  const jj = String(jour).padStart(2, "0");
+  const div = document.createElement("div");
+  div.className = "terminal";
+  div.innerHTML =
+    '<h4>[ Terminal ' + jj + ' Décembre ]</h4>' +
+    '<p class="enigme"></p>' +
+    '<input type="text" id="input_j' + jour + '" placeholder="C:\\> root --answer" autocomplete="off">' +
+    '<button type="button">Exécuter</button>' +
+    '<p class="msg" id="msg_j' + jour + '"></p>';
+  div.querySelector(".enigme").textContent = d.e;
+  div.querySelector("button").addEventListener("click", function () { check(jour); });
+  div.querySelector("input").addEventListener("keydown", function (ev) { if (ev.key === "Enter") check(jour); });
+  grille.prepend(div); // le terminal du jour apparaît en premier
+});
+
+// Console finale : visible à partir du 24 décembre
+if (estOuvert(24)) document.getElementById("zone_boss").hidden = false;
+
+// Message d'attente avant le prochain terminal
+const info = document.getElementById("info");
+if (nbOuverts === 0) {
+  info.textContent = "> Aucun terminal ouvert. Premier terminal : 1er décembre " + ANNEE + ".";
+} else if (nbOuverts < 24) {
+  info.textContent = "> " + nbOuverts + " terminal(aux) ouvert(s) sur 24. Prochain terminal : " + (nbOuverts + 1) + " décembre, à minuit.";
+} else {
+  info.textContent = "> Les 24 terminaux sont ouverts. Reconstituez la phrase finale.";
+}
+
+async function check(jour) {
+  const msg = document.getElementById("msg_j" + jour);
+  if (!estOuvert(jour)) {
+    msg.textContent = "⚠️ ERREUR : La faille temporelle du jour " + jour + " n'est pas encore ouverte.";
+    msg.style.color = "orange";
+    return;
+  }
+  msg.textContent = "Décryptage en cours...";
+  msg.style.color = "#00ff00";
+  const fragment = await dechiffrer(cleanString(document.getElementById("input_j" + jour).value), DATA[jour - 1]);
+  if (fragment !== null) {
+    msg.innerHTML = "ACCÈS AUTORISÉ. Fragment : [ <span class='fragment'></span> ]";
+    msg.querySelector(".fragment").textContent = fragment;
+    msg.style.color = "#00ff00";
+  } else {
+    msg.textContent = "ÉCHEC SYSTÈME.";
+    msg.style.color = "red";
+  }
+}
+
+async function checkBoss() {
+  const msg = document.getElementById("msg_boss");
+  msg.textContent = "Analyse de la phrase...";
+  msg.style.color = "red";
+  const texte = await dechiffrer(cleanString(document.getElementById("boss_input").value), BOSS);
+  const rappel = document.getElementById("rappel_mail");
+  if (texte !== null) {
+    msg.textContent = texte;
+    msg.style.color = "#00ff00";
+    const phrase = document.getElementById("boss_input").value.trim();
+    const lien = "mailto:" + MAIL + "?subject=" + encodeURIComponent("Calendrier de l'Avent - phrase finale")
+               + "&body=" + encodeURIComponent(phrase);
+    rappel.innerHTML = "📨 DERNIÈRE MISSION : envoyez immédiatement votre phrase par courriel à "
+      + "<a></a>.<br>Les premières bonnes réponses, par ordre d'arrivée, recevront un petit cadeau.";
+    const a = rappel.querySelector("a");
+    a.href = lien; a.textContent = MAIL;
+    rappel.hidden = false;
+  } else {
+    rappel.hidden = true;
+    msg.textContent = "☠️ FATAL ERROR. Saisie invalide.";
+  }
+}
+</script>
+</body>
+</html>
